@@ -1,0 +1,7 @@
+{
+  "python": {
+    "problem": "Read two space-separated integers from standard input and print their sum.",
+    "input": "3 5\n",
+    "expected_output": "8"
+  }
+}

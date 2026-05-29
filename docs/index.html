@@ -4,10 +4,133 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CodeSage</title>
+    <style>
+      body { font-family: -apple-system, Segoe UI, Arial, sans-serif; margin: 0; background: #0d1117; color: #e6edf3; }
+      header { padding: 18px 24px; border-bottom: 1px solid #30363d; }
+      header h1 { margin: 0; font-size: 1.4rem; }
+      header p { margin: 4px 0 0; color: #8b949e; font-size: 0.9rem; }
+      main { max-width: 980px; margin: 24px auto; padding: 0 16px; display: grid; gap: 18px; }
+      .panel { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px 18px; }
+      .panel h2 { margin: 0 0 8px; font-size: 1.05rem; }
+      label { display: block; font-size: 0.85rem; color: #8b949e; margin: 8px 0 4px; }
+      input, select, textarea { width: 100%; box-sizing: border-box; background: #0d1117; color: #e6edf3;
+        border: 1px solid #30363d; border-radius: 6px; padding: 8px; font-family: inherit; }
+      textarea { font-family: Consolas, Menlo, monospace; min-height: 220px; line-height: 1.45; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; }
+      .row > div { flex: 1; min-width: 160px; }
+      button { margin-top: 12px; background: #238636; color: #fff; border: 0; border-radius: 6px;
+        padding: 10px 18px; font-weight: 700; cursor: pointer; }
+      button:hover { background: #2ea043; }
+      .verdict { font-weight: 700; font-size: 1.05rem; }
+      .pass { color: #3fb950; } .fail { color: #f85149; }
+      .kv { color: #8b949e; font-size: 0.9rem; margin: 4px 0; }
+      .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #1f6feb33; color: #79c0ff; font-size: 0.8rem; }
+      code { background: #0d1117; padding: 2px 5px; border-radius: 4px; }
+      .muted { color: #8b949e; font-size: 0.85rem; }
+      #results { display: none; }
+    </style>
 </head>
 <body>
-    <h1>Welcome to CodeSage</h1>
-    <p>CodeSage is a LeetCode-inspired clone.</p>
-    <p>Note: GitHub Pages is a static site and does not support a Python backend.</p>
+    <header>
+      <h1>🧙 CodeSage</h1>
+      <p>A LeetCode-inspired clone where an AI guide reviews your code, estimates its difficulty, and runs it against test cases.</p>
+    </header>
+    <main>
+      <div class="panel">
+        <h2>Problem <span id="level" class="badge">Beginner</span></h2>
+        <p id="problem">Loading problem…</p>
+        <p class="kv">Sample input: <code id="sample-in">—</code> → expected output: <code id="sample-out">—</code></p>
+      </div>
+
+      <div class="panel">
+        <h2>Your solution</h2>
+        <div class="row">
+          <div>
+            <label for="user">User ID</label>
+            <input id="user" value="guest" autocomplete="off">
+          </div>
+          <div>
+            <label for="lang">Language</label>
+            <select id="lang"><option value="python">python</option></select>
+          </div>
+        </div>
+        <label for="code">Code</label>
+        <textarea id="code">a, b = map(int, input().split())
+print(a + b)</textarea>
+        <button id="run">Submit &amp; Analyze</button>
+        <p class="muted" id="conn"></p>
+      </div>
+
+      <div class="panel" id="results">
+        <h2>Result</h2>
+        <p class="verdict" id="verdict"></p>
+        <p class="kv" id="feedback"></p>
+        <p class="kv">Complexity (heuristic): <span id="complexity">—</span> · ML difficulty: <span id="mldiff">—</span></p>
+        <p class="kv">Execution time: <span id="exectime">—</span> s · Your level: <span id="nextlevel">—</span></p>
+        <p class="kv">Output: <code id="actual">—</code> (expected <code id="expected">—</code>)</p>
+      </div>
+    </main>
+
+    <script>
+      // Point this at your running backend. Default assumes local uvicorn on :8000.
+      const API_BASE = window.API_BASE || "http://localhost:8000";
+
+      async function loadProblem() {
+        try {
+          const r = await fetch(API_BASE + "/api/problem");
+          const p = await r.json();
+          document.getElementById("problem").textContent = p.problem;
+          document.getElementById("sample-in").textContent = JSON.stringify(p.sample_input);
+          document.getElementById("sample-out").textContent = p.expected_output;
+          document.getElementById("conn").textContent = "Connected to backend at " + API_BASE;
+        } catch (e) {
+          document.getElementById("problem").textContent =
+            "Could not reach the backend. Start it with: uvicorn main:app --reload (in backend/), then reload this page.";
+          document.getElementById("conn").textContent = "Backend not reachable at " + API_BASE;
+        }
+      }
+
+      async function refreshLevel(user) {
+        try {
+          const r = await fetch(API_BASE + "/api/stats/" + encodeURIComponent(user));
+          const s = await r.json();
+          document.getElementById("level").textContent = s.current_level || "Beginner";
+        } catch (e) {}
+      }
+
+      document.getElementById("run").addEventListener("click", async () => {
+        const user_id = document.getElementById("user").value.trim() || "guest";
+        const language = document.getElementById("lang").value;
+        const code = document.getElementById("code").value;
+        const btn = document.getElementById("run");
+        btn.disabled = true; btn.textContent = "Running…";
+        try {
+          const r = await fetch(API_BASE + "/api/submit", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id, code, language })
+          });
+          const d = await r.json();
+          document.getElementById("results").style.display = "";
+          const v = document.getElementById("verdict");
+          v.textContent = d.passed ? "✅ Passed" : "❌ Failed";
+          v.className = "verdict " + (d.passed ? "pass" : "fail");
+          document.getElementById("feedback").textContent = d.feedback || "";
+          document.getElementById("complexity").textContent = d.complexity_estimate || "—";
+          document.getElementById("mldiff").textContent = d.ml_difficulty || "—";
+          document.getElementById("exectime").textContent = d.execution_time ?? "—";
+          document.getElementById("nextlevel").textContent = d.next_level || "—";
+          document.getElementById("actual").textContent = (d.actual_output ?? "").trim() || "—";
+          document.getElementById("expected").textContent = d.expected_output ?? "—";
+          refreshLevel(user_id);
+        } catch (e) {
+          alert("Submission failed — is the backend running at " + API_BASE + "?");
+        } finally {
+          btn.disabled = false; btn.textContent = "Submit & Analyze";
+        }
+      });
+
+      loadProblem();
+      refreshLevel("guest");
+    </script>
 </body>
 </html>
